@@ -1,0 +1,5 @@
+{
+  "name": "SysGuard IDS Dashboard",
+  "description": "A professional system call-based intrusion detection dashboard for cybersecurity analysis and academic demonstration.",
+  "requestFramePermissions": []
+}
