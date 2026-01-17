@@ -1,6 +1,6 @@
 
 // Fixed import for SyscallData to come from types.ts as it is not exported from constants.ts
-import { SyscallData } from '../types';
+import { SyscallData } from '../src/types';
 
 export interface ParsedData {
   [key: string]: number;

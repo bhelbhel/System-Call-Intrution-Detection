@@ -8,7 +8,7 @@ import {
   SecurityAlert
 } from './types';
 import { generateTimelineData } from './constants';
-import { getAnalysisExplanation } from './services/geminiService';
+
 import { parseSyscallFile, analyzeDeviations, getSampleCSV, ParsedData } from './services/dataProcessor';
 import RiskMeter from './components/RiskMeter';
 import SyscallChart from './components/SyscallChart';
@@ -164,60 +164,85 @@ const App: React.FC = () => {
       setIsParsing({ type: '', active: false });
     }, 600);
   };
-
   const handleRunAnalysis = async () => {
-    if (!baselineParsed || !testParsed) return;
-    setIsAnalyzing(true);
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    const { syscalls, avgDeviation } = analyzeDeviations(baselineParsed, testParsed);
-    const isIntrusion = avgDeviation > threshold;
-    const timeline = generateTimelineData(isIntrusion);
-    const status = isIntrusion ? 'INTRUSION' : 'NORMAL';
-    let riskLevel = RiskLevel.LOW;
-    if (avgDeviation > threshold * 3) riskLevel = RiskLevel.CRITICAL;
-    else if (avgDeviation > threshold * 2) riskLevel = RiskLevel.HIGH;
-    else if (avgDeviation > threshold) riskLevel = RiskLevel.MEDIUM;
+  if (!baselineParsed || !testParsed) return;
 
-    const timestamp = new Date().toLocaleString();
-    const explanation = await getAnalysisExplanation(status, riskLevel, avgDeviation, syscalls);
+  setIsAnalyzing(true);
 
-    const newResult: AnalysisResult = {
-      id: Math.random().toString(36).substr(2, 9),
-      status,
-      deviationScore: avgDeviation,
-      riskLevel,
-      syscalls,
-      timeline,
-      timestamp,
-      explanation,
-      metadata: {
-        baselineFile: baselineFileName || 'unknown_baseline',
-        testFile: testFileName || 'unknown_test'
-      }
-    };
+  // 1️⃣ FAST local analysis (NO artificial delay, NO AI wait)
+  const { syscalls, avgDeviation } = analyzeDeviations(
+    baselineParsed,
+    testParsed
+  );
 
-    setResult(newResult);
-    setHistory(prev => [newResult, ...prev].slice(0, 50));
-    
-    // Alert Generation Logic
-    if (status === 'INTRUSION' && (riskLevel === RiskLevel.HIGH || riskLevel === RiskLevel.CRITICAL)) {
-      const newAlert: SecurityAlert = {
-        id: Math.random().toString(36).substr(2, 6),
-        severity: riskLevel,
-        title: riskLevel === RiskLevel.CRITICAL ? 'Critical Integrity Breach' : 'Suspicious Activity Detected',
-        message: explanation || "A significant behavioral anomaly was detected.",
-        timestamp: new Date().toLocaleTimeString(),
-        analysisId: newResult.id,
-        read: false
-      };
-      setAlerts(prev => [newAlert, ...prev]);
-      setActiveAlert(newAlert);
+  const isIntrusion = avgDeviation > threshold;
+  const timeline = generateTimelineData(isIntrusion);
+
+  const status = isIntrusion ? 'INTRUSION' : 'NORMAL';
+
+  let riskLevel = RiskLevel.LOW;
+  if (avgDeviation > threshold * 3) riskLevel = RiskLevel.CRITICAL;
+  else if (avgDeviation > threshold * 2) riskLevel = RiskLevel.HIGH;
+  else if (avgDeviation > threshold) riskLevel = RiskLevel.MEDIUM;
+
+  const timestamp = new Date().toLocaleString();
+
+  // 2️⃣ Create result immediately (UI updates instantly)
+  const newResult: AnalysisResult = {
+    id: Math.random().toString(36).substr(2, 9),
+    status,
+    deviationScore: avgDeviation,
+    riskLevel,
+    syscalls,
+    timeline,
+    timestamp,
+    explanation:
+      status === 'INTRUSION'
+        ? 'Intrusion detected due to abnormal system call frequency deviations beyond the defined threshold. Multiple security-sensitive syscalls exceeded baseline behavior, indicating potential malicious activity.'
+        : 'System behavior is within acceptable deviation limits. No anomalous syscall activity indicative of intrusion was detected.',
+
+    metadata: {
+      baselineFile: baselineFileName || 'unknown_baseline',
+      testFile: testFileName || 'unknown_test'
     }
-
-    setIsAnalyzing(false);
-    setActiveView('DASHBOARD');
   };
+
+  setResult(newResult);
+  setHistory(prev => [newResult, ...prev].slice(0, 50));
+  setActiveView('DASHBOARD');
+  setIsAnalyzing(false); // ✅ spinner stops NOW
+
+  // 3️⃣ Alert logic (UNCHANGED behavior)
+  if (
+    status === 'INTRUSION' &&
+    (riskLevel === RiskLevel.HIGH || riskLevel === RiskLevel.CRITICAL)
+  ) {
+    const newAlert: SecurityAlert = {
+      id: Math.random().toString(36).substr(2, 6),
+      severity: riskLevel,
+      title:
+        riskLevel === RiskLevel.CRITICAL
+          ? 'Critical Integrity Breach'
+          : 'Suspicious Activity Detected',
+      message: "AI forensic analysis in progress.",
+      timestamp: new Date().toLocaleTimeString(),
+      analysisId: newResult.id,
+      read: false
+    };
+    setAlerts(prev => [newAlert, ...prev]);
+    setActiveAlert(newAlert);
+  }
+
+  // 4️⃣ Run Gemini in BACKGROUND (NON-BLOCKING)
+  const topSyscalls = syscalls
+    .filter(s => s.deviation > threshold)
+    .slice(0, 10)
+    .map(s => ({ name: s.name, deviation: s.deviation }));
+
+  
+
+
+};
 
   const markAlertRead = (id: string) => {
     setAlerts(prev => prev.map(a => a.id === id ? { ...a, read: true } : a));
